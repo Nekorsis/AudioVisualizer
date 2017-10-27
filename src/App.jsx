@@ -1,4 +1,5 @@
 import React, {Component} from 'react';
+import MessageList from './MessageList.jsx';
 
 class App extends Component {
 
@@ -6,15 +7,16 @@ class App extends Component {
     super(props);
     this.state = {
       audioStream: null,
+      messages: [],
     };
-  };
+  }
 
   componentDidMount() {
-    this.canvasElement.width = 300;//'400px';
-    this.canvasElement.height = 300; //'250px';
+    this.canvasElement.width = 300;
+    this.canvasElement.height = 300;
 
-    this.ctx = this.canvasElement.getContext("2d");
-  };
+    this.ctx = this.canvasElement.getContext('2d');
+  }
 
   audioElement = null;
   canvasElement = null;
@@ -28,10 +30,21 @@ class App extends Component {
   bufferLength = null; // this.analyser.fftSize;
   dataArray = null; // Uint8Array(bufferLength);
 
+  recorder = null;
+  isRecording = false;
+  
+  addMessage = (message) => {
+    this.setState(() => {
+      let prevMessages = this.state.messages;
+      prevMessages.push(message);
+      return { messages: prevMessages };
+    });
+  };
+
   setAudioRef = (ref) => {
     this.audioElement = ref;
   };
-
+  
   setCanvasRef = (ref) => {
     this.canvasElement = ref;
   };
@@ -65,61 +78,117 @@ class App extends Component {
       }
 
       x += sliceWidth;
-    };
+    }
     this.ctx.lineTo(WIDTH, HEIGHT/2);
     this.ctx.stroke();
   };
 
   checkNavigator = () => {
+    console.log('start');
     const constraints = {
       audio: true,
     };
     navigator.mediaDevices.getUserMedia(constraints)
-    .then((stream) => {
-      this.setState(() => {
-        return { audioStream: stream.getAudioTracks().filter(track => track.enabled === true)[0] }
+      .then((stream) => {
+        this.isRecording = true;
+        this.setState(() => {
+          return { audioStream: stream.getAudioTracks().filter(track => track.enabled === true)[0] }
+        });
+        
+        this.audioCtx = new AudioContext();
+        this.source = this.audioCtx.createMediaStreamSource(stream);
+        this.analyser = this.audioCtx.createAnalyser();
+        this.source.connect(this.analyser);
+        this.bufferLength = this.analyser.frequencyBinCount;
+        this.dataArray = new Uint8Array(this.bufferLength);
+
+        // store streaming data chunks in array
+        const chunks = [];
+
+        // create media recorder instance to initialize recording
+        this.recorder = new MediaRecorder(stream);
+
+        this.recorder.ondataavailable = e => {
+          chunks.push(e.data);
+          if (this.recorder.state == 'inactive') {
+            const blob = new Blob(chunks, { type: 'audio/webm; codecs=opus' });
+            this.saveRecord(URL.createObjectURL(blob));
+          }
+        };
+
+        // start recording with 2.5 second time between receiving 'ondataavailable' events
+        this.recorder.start();
+
+        //this.analyser.getByteTimeDomainData(this.dataArray);
+        this.drawSomething();
+      })
+      .catch((error) => {
+        throw new Error(error);
+        //console.log('err: ', error);
       });
-      this.audioElement.srcObject  = stream;
-
-      this.audioCtx = new AudioContext();
-      this.source = this.audioCtx.createMediaStreamSource(stream);
-      this.analyser = this.audioCtx.createAnalyser();
-      this.source.connect(this.analyser);
-      this.bufferLength = this.analyser.frequencyBinCount;
-      this.dataArray = new Uint8Array(this.bufferLength);
-      //this.analyser.getByteTimeDomainData(this.dataArray);
-      this.drawSomething();
-
-    })
-    .catch((error) => {
-      console.log('err: ', error);
-    });
   };
 
   stopRecording = () => {
-    this.state.audioStream.stop();
+    if (this.isRecording !== true) {
+      return;
+    }
+    console.log('stop');
+    this.isRecording = false;
+    this.recorder.stop();
+    //this.state.audioStream.stop();
   };
 
-  saveRecord = () => {
-    console.log('hi');
-    const url = appState.fullScreenImageUrl;
-    const link = document.createElement("a");
-    const file = this.files.filter(file => {
-      return file.file.src === url;
-    });
-    link.download = `${file[0].file.file}`;
-    link.href = url;
-    link.click();
+  saveRecord = (blobUrl) => {
+    const downloadEl = document.createElement('a');
+    downloadEl.style = 'display: block';
+    downloadEl.innerHTML = 'download';
+    downloadEl.download = 'audio.webm';
+    downloadEl.href = blobUrl;
+    const audioEl = document.createElement('audio');
+    audioEl.controls = true;
+    audioEl.onloadedmetadata = () => {
+      console.log('duration: ', audioEl.duration);
+    };
+
+    if (audioEl.duration === Infinity) {
+      audioEl.currentTime = 1e101;
+      audioEl.ontimeupdate = () => {
+        this.ontimeupdate = () => { return; };
+        console.log('after workaround: ' + audioEl.duration);
+        audioEl.currentTime = 0;
+      };
+    }
+
+    audioEl.src = blobUrl;
+    document.body.appendChild(audioEl);
+    document.body.appendChild(downloadEl);
+    this.addMessage(blobUrl);
+    this.stopRecording();
+    this.state.audioStream.stop();
   };
 
   render() {
     return (
       <div className='container'>
-        <button onClick={this.checkNavigator} >Start recording</button>
-        <button onClick={this.stopRecording} >Stop recording</button>
-        <button onClick={this.saveRecord}> Save record </button>
-        <audio ref={this.setAudioRef} />
-        <canvas ref={this.setCanvasRef} id="canvas"></canvas>
+        <canvas
+          ref={this.setCanvasRef}
+          style={{
+            display: !this.isRecording ? 'none' : 'block' 
+          }}
+          id="canvas" 
+        />
+        <div className='input-container'>
+          <MessageList messages={this.state.messages} />
+          <input type='text' name='text' className='text-input' />
+          <button 
+            onMouseDown={this.checkNavigator}
+            onMouseUp={this.stopRecording}
+            onMouseLeave={this.stopRecording}
+            className='input-button'
+          >
+            press me
+          </button>
+        </div>
       </div>
     );
   }
