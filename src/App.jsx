@@ -13,7 +13,7 @@ class App extends Component {
 
   componentDidMount() {
     this.canvasElement.width = 300;
-    this.canvasElement.height = 300;
+    this.canvasElement.height = 50;
 
     this.ctx = this.canvasElement.getContext('2d');
   }
@@ -27,8 +27,8 @@ class App extends Component {
   source = null;
   analyser = null; 
 
-  bufferLength = null; // this.analyser.fftSize;
-  dataArray = null; // Uint8Array(bufferLength);
+  bufferLength = null;
+  dataArray = null;
 
   recorder = null;
   isRecording = false;
@@ -84,7 +84,6 @@ class App extends Component {
   };
 
   checkNavigator = () => {
-    console.log('start');
     const constraints = {
       audio: true,
     };
@@ -92,7 +91,7 @@ class App extends Component {
       .then((stream) => {
         this.isRecording = true;
         this.setState(() => {
-          return { audioStream: stream.getAudioTracks().filter(track => track.enabled === true)[0] }
+          return { audioStream: stream.getAudioTracks().filter(track => track.enabled === true)[0] };
         });
         
         this.audioCtx = new AudioContext();
@@ -116,15 +115,13 @@ class App extends Component {
           }
         };
 
-        // start recording with 2.5 second time between receiving 'ondataavailable' events
-        this.recorder.start();
+        // start recording with 1 second time between receiving 'ondataavailable' events
+        this.recorder.start(1000);
 
-        //this.analyser.getByteTimeDomainData(this.dataArray);
         this.drawSomething();
       })
       .catch((error) => {
         throw new Error(error);
-        //console.log('err: ', error);
       });
   };
 
@@ -132,10 +129,8 @@ class App extends Component {
     if (this.isRecording !== true) {
       return;
     }
-    console.log('stop');
     this.isRecording = false;
     this.recorder.stop();
-    //this.state.audioStream.stop();
   };
 
   saveRecord = (blobUrl) => {
@@ -146,15 +141,11 @@ class App extends Component {
     downloadEl.href = blobUrl;
     const audioEl = document.createElement('audio');
     audioEl.controls = true;
-    audioEl.onloadedmetadata = () => {
-      console.log('duration: ', audioEl.duration);
-    };
 
     if (audioEl.duration === Infinity) {
       audioEl.currentTime = 1e101;
       audioEl.ontimeupdate = () => {
         this.ontimeupdate = () => { return; };
-        console.log('after workaround: ' + audioEl.duration);
         audioEl.currentTime = 0;
       };
     }
@@ -170,7 +161,9 @@ class App extends Component {
   render() {
     return (
       <div className='container'>
+        <MessageList messages={this.state.messages} />
         <canvas
+          className='audio-visualizer'
           ref={this.setCanvasRef}
           style={{
             display: !this.isRecording ? 'none' : 'block' 
@@ -178,8 +171,18 @@ class App extends Component {
           id="canvas" 
         />
         <div className='input-container'>
-          <MessageList messages={this.state.messages} />
-          <input type='text' name='text' className='text-input' />
+          <div
+            className='red-dot'
+            style={{
+              display: !this.isRecording ? 'none' : 'block'
+            }}
+          />
+          <input
+            type='text'
+            name='text'
+            className='text-input'
+            placeholder={this.isRecording ? 'Release outside of the button to cancel recording' : ''}
+          />
           <button 
             onMouseDown={this.checkNavigator}
             onMouseUp={this.stopRecording}
